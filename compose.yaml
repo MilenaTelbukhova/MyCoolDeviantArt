@@ -1,0 +1,128 @@
+services:
+  flyway:
+    image: flyway/flyway
+    env_file:
+      - .env
+    command: -url=jdbc:postgresql://${PG_HOST:-postgres}:${PG_PORT:-5432}/postgres -schemas=public -user=${PG_USER:-CapTof} -target=${VERSION:-latest} -password=${PG_PASSWORD:-CapTof} -connectRetries=60 migrate
+    volumes:
+      - ./migrations:/flyway/sql
+    depends_on:
+      - postgres
+    restart: on-failure
+#  postgres:
+#    container_name: postgres
+#    image: postgres:14.5
+#    env_file:
+#      - .env
+#    hostname: postgres
+#    restart: unless-stopped
+#    volumes:
+#      - ./pg_data:/var/lib/postgresql/data
+#      - ./scripts:/docker-entrypoint-initdb.d
+#    ports:
+#      - "${PG_PORT:-5432}:${PG_PORT:-5432}"
+#    environment:
+#      - POSTGRES_PORT=${PG_PORT:-5432}
+#      - POSTGRES_PASSWORD=${PG_PASSWORD:-CapTof}
+#      - POSTGRES_USER=${PG_USER:-CapTof}
+  generators:
+      image: python:3.11-alpine
+      env_file:
+        - .env
+      environment:
+        DATABASE_URL: jdbc:postgresql://${PG_HOST:-postgres}:${PG_PORT:-5432}/postgres
+      volumes:
+        - ./generators:/tmp/source
+      depends_on:
+        postgres:
+          condition: service_started
+        flyway:
+          condition: service_completed_successfully
+      command: sh -c 'cd /tmp/source && pip install -r installs.txt && python -u generator.py'
+
+  etcd1: &etcd
+    image: patroni
+    networks: [ patronistream ]
+    environment:
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380 # по которому могут подключаться другие узлы
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379 # по которому могут подключаться клиенты
+      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380 # список узлов кластера
+      ETCD_INITIAL_CLUSTER_STATE: new # состояние кластера
+      ETCD_INITIAL_CLUSTER_TOKEN: fetors-cluster # токен кластера
+      ETCD_UNSUPPORTED_ARCH: arm64 # архитектура
+    container_name: etcd1
+    hostname: etcd1
+    command: etcd --name etcd1 --initial-advertise-peer-urls http://etcd1:2380 # имя узла и адрес для обмена данными
+
+    etcd2:
+      <<: *etcd
+      container_name: etcd2
+      hostname: etcd2
+      command: etcd --name etcd2 --initial-advertise-peer-urls http://etcd2:2380
+
+    etcd3:
+      <<: *etcd
+      container_name: etcd3
+      hostname: etcd3
+      command: etcd --name etcd3 --initial-advertise-peer-urls http://etcd3:2380
+
+    haproxy:
+      image: patroni
+      networks: [ patronistream ]
+      volumes:
+        - ./init:/docker-entrypoint-initdb.d
+      env_file:
+        - patroni.env
+        - .env
+      hostname: haproxy
+      container_name: haproxy
+      ports:
+        - "${PG_PORT}:5000"
+        - "5001:5001"
+      command: haproxy
+      environment: &haproxy_env
+        ETCDCTL_ENDPOINTS: http://etcd1:2379,http://etcd2:2379
+        PATRONI_ETCD3_HOSTS: "'etcd1:2379','etcd2:2379'" # список узлов etcd
+        PATRONI_SCOPE: patronistream
+
+      # healthcheck:
+      #   test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -p $${PG_PORT} -h localhost"]
+      #   interval: 5s
+      #   timeout: 5s
+      #   retries: 10
+
+    patroni1:
+      image: patroni
+      networks: [ patronistream ]
+      env_file: patroni.env
+      hostname: patroni1
+      container_name: patroni1
+      volumes:
+        - ./init:/docker-entrypoint-initdb.d
+      environment:
+        <<: *haproxy_env
+        PATRONI_NAME: patroni1
+
+    patroni2:
+      image: patroni
+      networks: [ patronistream ]
+      env_file: patroni.env
+      hostname: patroni2
+      container_name: patroni2
+      volumes:
+        - ./init:/docker-entrypoint-initdb.d
+      environment:
+        <<: *haproxy_env
+        PATRONI_NAME: patroni2
+
+    patroni3:
+      image: patroni
+      networks: [ patronistream ]
+      env_file: patroni.env
+      hostname: patroni3
+      container_name: patroni3
+      volumes:
+        - ./init:/docker-entrypoint-initdb.d
+      environment:
+        <<: *haproxy_env
+        PATRONI_NAME: patroni3

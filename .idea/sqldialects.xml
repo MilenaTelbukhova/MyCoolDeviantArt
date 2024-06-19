@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/generators/generator.py" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/V1.0.0__create_tables.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/V1.1.0__create_many_to_many_tables.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/V1.2.0__add_foreign_keys.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/V1.3.0__create_indexes.sql" dialect="PostgreSQL" />
+    <file url="file://$PROJECT_DIR$/migrations/V1.4.0__create_partitions.sql" dialect="PostgreSQL" />
+    <file url="PROJECT" dialect="PostgreSQL" />
+  </component>
+</project>
